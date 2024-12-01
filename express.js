@@ -27,18 +27,20 @@ console.log("MongoDB Connection URI:", uri);
 const client = new MongoClient(uri, { serverApi: ServerApiVersion.v1 });
 let db;
 
-
-// Express setup
-app.set('json spaces', 3);
-app.use(cors());
-app.use(morgan("short"));
-app.use(express.json());
+// Serve static files from the 'public/images' directory
+app.use("/images", express.static(path.join(__dirname, "../../public/images")));
 
 // Middleware to log incoming requests
 app.use((req, res, next) => {
   console.log("Incoming request: " + req.url);
   next();
 });
+
+// Express setup
+app.set('json spaces', 3);
+app.use(cors());
+app.use(morgan("short"));
+app.use(express.json());
 
 // Middleware to attach collection to request
 app.param('collectionName', (req, res, next, collectionName) => {
@@ -76,29 +78,6 @@ app.get('/collections/:collectionName', async (req, res, next) => {
   }
 });
 
-
-// Get limited and sorted documents from a collection
-app.get('/collections/:collectionName/:max/:sortAspect/:sortAsDesc', (req, res, next) => {
-  const max = parseInt(req.params.max, 10);
-  const sortDirection = req.params.sortAsDesc === "desc" ? -1 : 1;
-
-  req.collection.find({})
-    .limit(max)
-    .sort({ [req.params.sortAspect]: sortDirection })
-    .toArray((err, results) => {
-      if (err) return next(err);
-      res.send(results);
-    });
-});
-
-// Get a document by ID
-app.get('/collections/:collectionName/:id', (req, res, next) => {
-  req.collection.findOne({ _id: new ObjectId(req.params.id) }, (err, result) => {
-    if (err) return next(err);
-    res.send(result);
-  });
-});
-
 // Insert a new document into a collection
 app.post('/collections/:collectionName', async (req, res) => {
     console.log("Received POST request with data:", req.body);
@@ -110,9 +89,10 @@ app.post('/collections/:collectionName', async (req, res) => {
       console.error("Error inserting document:", err.message);
       res.status(500).json({ error: "Failed to insert document" });
     }
-  });
+});
 
-  app.post('/collections/orders', async (req, res) => {
+// Order route with stock validation
+app.post('/collections/orders', async (req, res) => {
     console.log("Received order data:", req.body);
     const { name, phone, lessonIDs, spaces } = req.body;
   
@@ -146,8 +126,7 @@ app.post('/collections/:collectionName', async (req, res) => {
       console.error("Error placing order:", err.message);
       res.status(500).json({ error: "Failed to place order" });
     }
-  });
-  
+});
 
 // Delete a document by ID
 app.delete('/collections/:collectionName/:id', async (req, res) => {
@@ -158,54 +137,14 @@ app.delete('/collections/:collectionName/:id', async (req, res) => {
       console.error("Error deleting document:", err.message);
       res.status(500).json({ error: "Failed to delete document" });
     }
-  });
-
-// Update a document by ID
-app.put('/collections/:collectionName/:id', async (req, res) => {
-    try {
-      const result = await req.collection.updateOne(
-        { _id: new ObjectId(req.params.id) },
-        { $set: req.body }
-      );
-      res.json(result.matchedCount === 1 ? { msg: "success" } : { msg: "Document not found" });
-    } catch (err) {
-      console.error("Error updating document:", err.message);
-      res.status(500).json({ error: "Failed to update document" });
-    }
-  });
-  
-  // Update any attribute in a lesson document by its ID
-app.put('/collections/lessons/:id', async (req, res) => {
-    const lessonId = req.params.id;
-    const updateData = req.body;
-
-    try {
-        // Ensure that updateData contains at least one field to update
-        if (Object.keys(updateData).length === 0) {
-            return res.status(400).json({ error: "No fields to update" });
-        }
-
-        const result = await req.collection.updateOne(
-            { _id: new ObjectId(lessonId) },
-            { $set: updateData }
-        );
-
-        if (result.matchedCount === 0) {
-            return res.status(404).json({ error: "Lesson not found" });
-        }
-
-        res.json({ message: "Lesson updated successfully", result });
-    } catch (err) {
-        console.error("Error updating lesson:", err.message);
-        res.status(500).json({ error: "Failed to update lesson" });
-    }
 });
 
+// Error handling for non-existent static files
+app.use((req, res) => {
+  res.status(404).send("Resource not found!");
+});
 
-  app.use((req, res) => {
-    res.status(404).send("Resource not found!");
-  });
-
+// Start the server
 async function startServer() {
     try {
       await client.connect(); // Connect to MongoDB
@@ -220,7 +159,6 @@ async function startServer() {
       console.error("Error connecting to MongoDB:", err.message);
       process.exit(1); // Exit the process with an error status
     }
-  }
-  
-  // Start the server only after successful database connection
-  startServer();
+}
+
+startServer();
