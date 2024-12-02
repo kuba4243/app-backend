@@ -142,6 +142,42 @@ app.put('/collections/products/:id', async (req, res) => {
 });
 
 
+// Add this route in your existing Express server
+app.get('/search', async (req, res) => {
+  const { query } = req.query; // Get the search query from the query string
+  if (!query) {
+    return res.status(400).json({ error: "Search query is required" });
+  }
+
+  try {
+    // Perform a case-insensitive search across subject, location, price, and availableSpace
+    const results = await db.collection('products').find({
+      $or: [
+        { subject: { $regex: query, $options: 'i' } },
+        { location: { $regex: query, $options: 'i' } },
+        { price: { $regex: query, $options: 'i' } },
+        { availableSpace: { $regex: query, $options: 'i' } }
+      ]
+    }).toArray();
+
+    res.json(results);
+  } catch (err) {
+    console.error("Error in search:", err.message);
+    res.status(500).json({ error: "Failed to search lessons" });
+  }
+});
+app.get('/test-db', async (req, res) => {
+  try {
+    const testData = await db.collection('products').find({}).limit(1).toArray();
+    res.json(testData);
+  } catch (error) {
+    console.error("Database connection failed:", error.message); // Log the error
+    res.status(500).json({ error: "Database connection failed", details: error.message });
+  }
+});
+
+
+
 
   // Catch-all middleware
   app.use((req, res) => {
