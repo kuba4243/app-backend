@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const path = require("path");
-const propertiesReader = require("properties-reader");
+const propertiesReader = require('properties-reader');
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
@@ -27,6 +27,29 @@ console.log("MongoDB Connection URI:", uri);
 const client = new MongoClient(uri, { serverApi: ServerApiVersion.v1 });
 let db;
 
+
+// Express setup
+app.set('json spaces', 3);
+app.use(cors());
+app.use(morgan("short"));
+app.use(express.json());
+
+// Middleware to log incoming requests
+app.use((req, res, next) => {
+  console.log("Incoming request: " + req.url);
+  next();
+});
+
+// Middleware to attach collection to request
+app.param('collectionName', (req, res, next, collectionName) => {
+  if (db) {
+    req.collection = db.collection(collectionName);
+    next();
+  } else {
+    res.status(500).send("Database not connected");
+  }
+});
+
 // Serve static files from the 'public/images' directory
 const staticImagesPath = path.join(__dirname, "../../public/images");
 console.log("Serving static files from:", path.join(__dirname, "../../public/images"));
@@ -39,35 +62,13 @@ app.use("/images", (req, res, next) => {
   next();
 });
 
-// Middleware to log incoming requests
-app.use((req, res, next) => {
-  console.log("Incoming request: " + req.url);
-  next();
-});
-
-// Express setup
-app.set("json spaces", 3);
-app.use(cors());
-app.use(morgan("short"));
-app.use(express.json());
-
-// Middleware to attach collection to request
-app.param("collectionName", (req, res, next, collectionName) => {
-  if (db) {
-    req.collection = db.collection(collectionName);
-    next();
-  } else {
-    res.status(500).send("Database not connected");
-  }
-});
-
 // Routes
-app.get("/", (req, res) => {
-  res.send("Select a collection, e.g., /collections/products");
+app.get('/', (req, res) => {
+  res.send('Select a collection, e.g., /collections/products');
 });
 
 // Get all documents in a collection
-app.get("/collections/:collectionName", async (req, res, next) => {
+app.get('/collections/:collectionName', async (req, res, next) => {
   try {
     if (!req.collection) {
       console.error("Collection not found");
@@ -75,7 +76,7 @@ app.get("/collections/:collectionName", async (req, res, next) => {
     }
 
     const results = await req.collection.find({}).toArray();
-
+    
     if (results.length === 0) {
       console.log("No documents found in the collection");
     }
@@ -87,39 +88,81 @@ app.get("/collections/:collectionName", async (req, res, next) => {
   }
 });
 
-// Insert a new document into a collection
-app.post("/collections/:collectionName", async (req, res) => {
-  console.log("Received POST request with data:", req.body);
+
+  // Insert order into orders collection
+app.post('/collections/orders', async (req, res) => {
+  console.log("Received order data:", req.body);
+  const { name, phone, lessonIDs } = req.body;
+
+  // Validate request body
+  if (!name || !phone || !Array.isArray(lessonIDs) || lessonIDs.length === 0) {
+    return res.status(400).json({ error: "Invalid order data" });
+  }
+
   try {
-    const result = await req.collection.insertOne(req.body);
-    console.log("Document inserted:", result);
-    res.status(201).json({ message: "Document inserted", result });
+    // Insert the order into the orders collection
+    const result = await db.collection("orders").insertOne(req.body);
+    console.log("Order inserted:", result);
+    res.status(201).json({ message: "Order successfully placed", result });
   } catch (err) {
-    console.error("Error inserting document:", err.message);
-    res.status(500).json({ error: "Failed to insert document" });
+    console.error("Error placing order:", err.message);
+    res.status(500).json({ error: "Failed to place order" });
   }
 });
 
-// Error handling for non-existent static files
-app.use((req, res) => {
-  res.status(404).send("Resource not found!");
+  
+
+// Update any attribute in a product document by its ID
+app.put('/collections/products/:id', async (req, res) => {
+  const productId = req.params.id; // Get the product ID from the URL
+  const updateData = req.body; // Get the fields to update from the request body
+
+  try {
+    // Ensure that the request body contains at least one field to update
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: "No fields to update" });
+    }
+
+    // Perform the update operation
+    const result = await db.collection("products").updateOne(
+      { _id: new ObjectId(productId) }, // Match the product by its ObjectId
+      { $set: updateData } // Update the specified fields
+    );
+
+    // Check if the product was found and updated
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    res.json({ message: "Product updated successfully", result });
+  } catch (err) {
+    console.error("Error updating product:", err.message);
+    res.status(500).json({ error: "Failed to update product" });
+  }
 });
 
-// Start the server
+
+
+  // Catch-all middleware
+  app.use((req, res) => {
+    res.status(404).send("Resource not found!");
+  });
+
 async function startServer() {
-  try {
-    await client.connect(); // Connect to MongoDB
-    db = client.db(dbName);
-    console.log("Connected to MongoDB successfully");
-
-    const PORT = process.env.PORT || 3000; // Use environment variable for port
-    app.listen(PORT, () => {
-      console.log(`Server started on port ${PORT}`);
-    });
-  } catch (err) {
-    console.error("Error connecting to MongoDB:", err.message);
-    process.exit(1); // Exit the process with an error status
+    try {
+      await client.connect(); // Connect to MongoDB
+      db = client.db(dbName);
+      console.log("Connected to MongoDB successfully");
+  
+      const PORT = 3000;
+      app.listen(PORT, () => {
+        console.log(`Server started on port ${PORT}`);
+      });
+    } catch (err) {
+      console.error("Error connecting to MongoDB:", err.message);
+      process.exit(1); // Exit the process with an error status
+    }
   }
-}
-
-startServer();
+  
+  // Start the server only after successful database connection
+  startServer();
